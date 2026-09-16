@@ -20,13 +20,21 @@ jobs:
         java-version: '17'
         cache: 'gradle'
 
+    - name: Generate Dummy Keystore
+      run: |
+        mkdir -p $HOME/.android
+        keytool -genkey -v -keystore $HOME/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        if [ -d "app" ]; then
+          cp $HOME/.android/debug.keystore app/debug.keystore || true
+        fi
+
     - name: Build Android Debug APK
       run: |
         if [ -f ./gradlew ]; then
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android
         else
-          cd app && chmod +x ./gradlew && ./gradlew assembleDebug || gradle assembleDebug
+          cd app && chmod +x ./gradlew && ./gradlew assembleDebug -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android || gradle assembleDebug
         fi
 
     - name: Upload Finished APK
@@ -35,4 +43,3 @@ jobs:
         name: my-vpn-app
         path: |
           **/build/outputs/apk/debug/*.apk
-
