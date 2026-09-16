@@ -1,0 +1,6 @@
+{
+  "name": "VectaVPN",
+  "description": "Fast and secure VectaVPN proxy with high-speed server selection, connection monitoring, and privacy protection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
