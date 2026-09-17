@@ -55,7 +55,7 @@ import com.example.data.AppStrings
 import com.example.data.BottomTab
 import com.example.data.DefaultData
 import com.example.data.Language
-import com.example.data.VpnServer
+import com.example.data.ServerModel
 import com.example.data.VpnStats
 import com.example.data.VpnStatus
 import com.example.ui.components.CountryFlag
@@ -64,7 +64,6 @@ import com.example.ui.components.GlowConnectionButton
 import com.example.ui.components.JumpJumpBottomBar
 import com.example.ui.components.JumpJumpHeader
 import com.example.ui.components.LocationSelectionCard
-import com.example.ui.components.SelectedServerPill
 import com.example.ui.theme.VpnCardBorder
 import com.example.ui.theme.VpnDarkBg
 import com.example.ui.theme.VpnNeonGreen
@@ -80,15 +79,18 @@ fun MainVpnScreen(
     currentTab: BottomTab,
     onTabSelected: (BottomTab) -> Unit,
     vpnStatus: VpnStatus,
-    selectedServer: VpnServer,
-    servers: List<VpnServer>,
+    selectedServer: ServerModel?,
+    servers: List<ServerModel>,
     stats: VpnStats,
     langCode: String,
     killSwitchEnabled: Boolean,
     dnsProtectionEnabled: Boolean,
     selectedProtocol: String,
+    isFetchingServers: Boolean = false,
+    serversFetchError: String? = null,
+    onRetryFetchServers: () -> Unit = {},
     onToggleConnect: () -> Unit,
-    onSelectServer: (VpnServer) -> Unit,
+    onSelectServer: (ServerModel) -> Unit,
     onKillSwitchToggle: (Boolean) -> Unit,
     onDnsToggle: (Boolean) -> Unit,
     onProtocolSelected: (String) -> Unit,
@@ -165,14 +167,10 @@ fun MainVpnScreen(
                             Spacer(modifier = Modifier.height(4.dp))
 
                             val statusLabel = when (vpnStatus) {
-                                VpnStatus.CONNECTED -> if (langCode == "fa") "متصل شد" else "CONNECTED"
-                                VpnStatus.CONNECTING -> if (langCode == "fa") "در حال اتصال..." else "CONNECTING..."
-                                VpnStatus.DISCONNECTED -> if (langCode == "fa") "متصل نیست" else "DISCONNECTED"
-                                VpnStatus.ERROR -> if (langCode == "fa") {
-                                    "خطا در اتصال. لطفاً اینترنت خود را بررسی کنید یا سرور دیگری انتخاب نمایید"
-                                } else {
-                                    "Connection failed. Please check your internet connection."
-                                }
+                                VpnStatus.CONNECTED -> AppStrings.get("connected", langCode)
+                                VpnStatus.CONNECTING -> AppStrings.get("connecting", langCode)
+                                VpnStatus.DISCONNECTED -> AppStrings.get("disconnected", langCode)
+                                VpnStatus.ERROR -> AppStrings.get("error_connection_msg", langCode)
                             }
                             Text(
                                 text = statusLabel,
@@ -192,7 +190,7 @@ fun MainVpnScreen(
                         // 2. Center Big Glowing Button (Our exact JumpJump capsule switch button - colors strictly kept)
                         GlowConnectionButton(
                             status = vpnStatus,
-                            pingMs = selectedServer.pingMs,
+                            pingMs = 0,
                             langCode = langCode,
                             onToggleConnect = onToggleConnect
                         )
@@ -211,8 +209,11 @@ fun MainVpnScreen(
                         // 4. Server Location Selection Card (at the bottom of the page)
                         LocationSelectionCard(
                             servers = servers,
-                            selectedServerId = selectedServer.id,
+                            selectedServer = selectedServer,
                             langCode = langCode,
+                            isFetching = isFetchingServers,
+                            fetchError = serversFetchError,
+                            onRetry = onRetryFetchServers,
                             onSelectServer = onSelectServer
                         )
 
@@ -394,81 +395,77 @@ fun MainVpnScreen(
                 }
             }
         }
+    }
 
-        // 1.5-Hour Session Timeout Dialog
-        if (sessionExpiredNotice) {
-            val isFa = langCode == "fa"
-            BasicAlertDialog(
-                onDismissRequest = onDismissSessionExpiredNotice,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color(0xFF1E2638))
-                    .border(1.dp, Color(0xFF3A82F7).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                    .padding(24.dp)
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Outlined.Timer,
-                        contentDescription = null,
-                        tint = Color(0xFF3A82F7),
-                        modifier = Modifier.size(50.dp)
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = if (isFa) "اتمام زمان اتصال (۱:۳۰ ساعت)" else "Session Limit Reached (1h 30m)",
-                        color = VpnTextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (isFa)
-                            "مدت زمان مجاز اتصال پیوسته (۱ ساعت و نیم) به پایان رسید و اتصال قطع شد. برای اتصال مجدد ضربه بزنید."
-                        else
-                            "Your 1.5-hour connection time limit was reached and the session ended. Tap reconnect to connect again.",
-                        color = VpnTextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    // 1.5-Hour Session Timeout Dialog
+    if (sessionExpiredNotice) {
+        BasicAlertDialog(
+            onDismissRequest = onDismissSessionExpiredNotice,
+            modifier = Modifier
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xFF1E2638))
+                .border(1.dp, Color(0xFF3A82F7).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                .padding(24.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Outlined.Timer,
+                    contentDescription = null,
+                    tint = Color(0xFF3A82F7),
+                    modifier = Modifier.size(50.dp)
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = AppStrings.get("session_limit_title", langCode),
+                    color = VpnTextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = AppStrings.get("session_limit_desc", langCode),
+                    color = VpnTextSecondary,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF2B3448))
+                            .clickable(onClick = onDismissSessionExpiredNotice)
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF2B3448))
-                                .clickable(onClick = onDismissSessionExpiredNotice)
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (isFa) "بستن" else "Close",
-                                color = VpnTextPrimary,
-                                fontSize = 14.sp
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF3A82F7))
-                                .clickable {
-                                    onDismissSessionExpiredNotice()
-                                    onToggleConnect()
-                                }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (isFa) "اتصال مجدد" else "Reconnect",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Text(
+                            text = AppStrings.get("close", langCode),
+                            color = VpnTextPrimary,
+                            fontSize = 14.sp
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF3A82F7))
+                            .clickable {
+                                onDismissSessionExpiredNotice()
+                                onToggleConnect()
+                            }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = AppStrings.get("reconnect", langCode),
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

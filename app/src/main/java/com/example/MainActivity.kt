@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -44,6 +46,7 @@ import com.example.ui.components.DisconnectingModalDialog
 import com.example.ui.screens.MainVpnScreen
 import com.example.ui.screens.OnboardingLanguageScreen
 import com.example.ui.screens.OnboardingPrivacyScreen
+import com.example.ui.screens.SplashScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.VpnDarkBg
 
@@ -71,6 +74,8 @@ fun VpnAppRoot(
 ) {
     val context = LocalContext.current
 
+    val isSplashScreenCompleted by viewModel.isSplashScreenCompleted.collectAsState()
+    val isServerListReady by viewModel.isServerListReady.collectAsState()
     val isOnboardingCompleted by viewModel.isOnboardingCompleted.collectAsState()
     val onboardingStep by viewModel.onboardingStep.collectAsState()
     val selectedLanguageCode by viewModel.selectedLanguageCode.collectAsState()
@@ -78,19 +83,28 @@ fun VpnAppRoot(
     val vpnStatus by viewModel.vpnStatus.collectAsState()
     val selectedServer by viewModel.selectedServer.collectAsState()
     val servers by viewModel.servers.collectAsState()
+    val isFetchingServers by viewModel.isFetchingServers.collectAsState()
+    val serversFetchError by viewModel.serversFetchError.collectAsState()
     val stats by viewModel.stats.collectAsState()
     val killSwitchEnabled by viewModel.killSwitchEnabled.collectAsState()
     val dnsProtectionEnabled by viewModel.dnsProtectionEnabled.collectAsState()
     val selectedProtocol by viewModel.selectedProtocol.collectAsState()
     val connectingProgress by viewModel.connectingProgress.collectAsState()
-    val connectingRemainingSeconds by viewModel.connectingRemainingSeconds.collectAsState()
-    val connectingStep by viewModel.connectingStep.collectAsState()
-    val connectingLog by viewModel.connectingLog.collectAsState()
     val sessionExpiredNotice by viewModel.sessionExpiredNotice.collectAsState()
     val showDisconnectConfirm by viewModel.showDisconnectConfirm.collectAsState()
     val isDisconnecting by viewModel.isDisconnecting.collectAsState()
     val isRocketLoading by viewModel.isRocketLoading.collectAsState()
+    val connectingLogMessage by viewModel.connectingLogMessage.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val toastMessage by viewModel.toastMessage.collectAsState()
+
+    // Show Toast messages (e.g. for connection errors or permission denied)
+    LaunchedEffect(toastMessage) {
+        toastMessage?.let { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            viewModel.clearToast()
+        }
+    }
 
     // 1. Android Notification Permission Launcher (API 33+)
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -103,7 +117,7 @@ fun VpnAppRoot(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             // Permission granted by user via official Android system dialog!
-            viewModel.finalizeConnection(context)
+            viewModel.onVpnPermissionGranted(context)
         } else {
             // User cancelled or denied VPN permission dialog
             viewModel.onVpnPermissionDenied()
@@ -123,13 +137,13 @@ fun VpnAppRoot(
                     }
                 }
 
-                // Step 1: Trigger existing "Rocket Flying" animation (Loading state)
+                // Step 1: Check VpnService.prepare and trigger 20-second loading & Ad
                 viewModel.startConnectionFlow(context) { vpnIntent ->
                     vpnPrepareLauncher.launch(vpnIntent)
                 }
             }
             VpnStatus.CONNECTED -> {
-                // Step 1 in Disconnection: Show existing confirmation dialog with "Disconnect" or "Cancel"
+                // Step 1 in Disconnection: Show confirmation dialog ("آیا از قطع ارتباط اطمینان دارید؟")
                 viewModel.promptDisconnect()
             }
             VpnStatus.CONNECTING -> {
@@ -146,119 +160,137 @@ fun VpnAppRoot(
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
-        if (!isOnboardingCompleted) {
-            // Onboarding Flow: 2 sequential screens
-            AnimatedContent(
-                targetState = onboardingStep,
-                transitionSpec = {
-                    if (targetState > initialState) {
-                        (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
-                            slideOutHorizontally { width -> -width } + fadeOut()
-                        )
-                    } else {
-                        (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
-                            slideOutHorizontally { width -> width } + fadeOut()
-                        )
-                    }
-                },
-                label = "onboarding_flow"
-            ) { step ->
-                when (step) {
-                    1 -> {
-                        OnboardingLanguageScreen(
-                            selectedLanguageCode = selectedLanguageCode,
-                            onLanguageSelected = { lang ->
-                                viewModel.selectLanguage(lang)
-                            },
-                            onContinueClick = {
-                                viewModel.goToPrivacyScreen()
-                            }
-                        )
-                    }
-                    2 -> {
-                        BackHandler {
-                            viewModel.backToLanguageScreen()
-                        }
-                        OnboardingPrivacyScreen(
-                            langCode = selectedLanguageCode,
-                            onBackClick = {
-                                viewModel.backToLanguageScreen()
-                            },
-                            onAcceptAndContinue = {
-                                viewModel.completeOnboarding()
-                            }
-                        )
-                    }
-                }
-            }
-        } else {
-            // Main VPN Screen with modal ConnectingModalDialog overlay
-            Box(modifier = Modifier.fillMaxSize()) {
-                MainVpnScreen(
-                    currentTab = currentTab,
-                    onTabSelected = { viewModel.setTab(it) },
-                    vpnStatus = vpnStatus,
-                    selectedServer = selectedServer,
-                    servers = servers,
-                    stats = stats,
-                    langCode = selectedLanguageCode,
-                    killSwitchEnabled = killSwitchEnabled,
-                    dnsProtectionEnabled = dnsProtectionEnabled,
-                    selectedProtocol = selectedProtocol,
-                    onToggleConnect = handleConnectToggle,
-                    onSelectServer = { viewModel.selectServer(it, context) },
-                    onKillSwitchToggle = { viewModel.setKillSwitch(it) },
-                    onDnsToggle = { viewModel.setDnsProtection(it) },
-                    onProtocolSelected = { viewModel.setProtocol(it) },
-                    onLanguageSelected = { viewModel.selectLanguage(it) },
-                    onResetOnboarding = { viewModel.resetOnboarding() },
-                    sessionExpiredNotice = sessionExpiredNotice,
-                    onDismissSessionExpiredNotice = { viewModel.dismissSessionExpiredNotice() },
-                    errorMessage = errorMessage,
-                    onClearError = { viewModel.clearError() },
-                    onConnectOffline = {
-                        viewModel.startConnectionFlow(context) { vpnIntent ->
-                            vpnPrepareLauncher.launch(vpnIntent)
-                        }
+        AnimatedContent(
+            targetState = isSplashScreenCompleted,
+            transitionSpec = {
+                fadeIn(animationSpec = tween(500)).togetherWith(fadeOut(animationSpec = tween(500)))
+            },
+            label = "splash_transition"
+        ) { splashDone ->
+            if (!splashDone) {
+                SplashScreen(
+                    isServerListReady = isServerListReady,
+                    onSplashFinished = {
+                        viewModel.completeSplashScreen()
                     }
                 )
+            } else {
+                if (!isOnboardingCompleted) {
+                    // Onboarding Flow: 2 sequential screens
+                    AnimatedContent(
+                        targetState = onboardingStep,
+                        transitionSpec = {
+                            if (targetState > initialState) {
+                                (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                                    slideOutHorizontally { width -> -width } + fadeOut()
+                                )
+                            } else {
+                                (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                                    slideOutHorizontally { width -> width } + fadeOut()
+                                )
+                            }
+                        },
+                        label = "onboarding_flow"
+                    ) { step ->
+                        when (step) {
+                            1 -> {
+                                OnboardingLanguageScreen(
+                                    selectedLanguageCode = selectedLanguageCode,
+                                    onLanguageSelected = { lang ->
+                                        viewModel.selectLanguage(lang)
+                                    },
+                                    onContinueClick = {
+                                        viewModel.goToPrivacyScreen()
+                                    }
+                                )
+                            }
+                            2 -> {
+                                BackHandler {
+                                    viewModel.backToLanguageScreen()
+                                }
+                                OnboardingPrivacyScreen(
+                                    langCode = selectedLanguageCode,
+                                    onBackClick = {
+                                        viewModel.backToLanguageScreen()
+                                    },
+                                    onAcceptAndContinue = {
+                                        viewModel.completeOnboarding()
+                                    }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Main VPN Screen with modal ConnectingModalDialog overlay
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        MainVpnScreen(
+                            currentTab = currentTab,
+                            onTabSelected = { viewModel.setTab(it) },
+                            vpnStatus = vpnStatus,
+                            selectedServer = selectedServer,
+                            servers = servers,
+                            stats = stats,
+                            langCode = selectedLanguageCode,
+                            killSwitchEnabled = killSwitchEnabled,
+                            dnsProtectionEnabled = dnsProtectionEnabled,
+                            selectedProtocol = selectedProtocol,
+                            isFetchingServers = isFetchingServers,
+                            serversFetchError = serversFetchError,
+                            onRetryFetchServers = { viewModel.retryFetchServers() },
+                            onToggleConnect = handleConnectToggle,
+                            onSelectServer = { viewModel.selectServer(it, context) },
+                            onKillSwitchToggle = { viewModel.setKillSwitch(it) },
+                            onDnsToggle = { viewModel.setDnsProtection(it) },
+                            onProtocolSelected = { viewModel.setProtocol(it) },
+                            onLanguageSelected = { viewModel.selectLanguage(it) },
+                            onResetOnboarding = { viewModel.resetOnboarding() },
+                            sessionExpiredNotice = sessionExpiredNotice,
+                            onDismissSessionExpiredNotice = { viewModel.dismissSessionExpiredNotice() },
+                            errorMessage = errorMessage,
+                            onClearError = { viewModel.clearError() },
+                            onConnectOffline = {
+                                viewModel.startConnectionFlow(context) { vpnIntent ->
+                                    vpnPrepareLauncher.launch(vpnIntent)
+                                }
+                            }
+                        )
 
-                AnimatedVisibility(
-                    visible = isRocketLoading,
-                    enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f),
-                    exit = fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 1.05f)
-                ) {
-                    ConnectingModalDialog(
-                        server = selectedServer,
-                        progress = connectingProgress,
-                        remainingSeconds = connectingRemainingSeconds,
-                        currentStep = connectingStep,
-                        logMessage = connectingLog,
-                        langCode = selectedLanguageCode,
-                        onCancel = { viewModel.cancelConnecting() }
-                    )
-                }
+                        AnimatedVisibility(
+                            visible = isRocketLoading,
+                            enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f),
+                            exit = fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 1.05f)
+                        ) {
+                            ConnectingModalDialog(
+                                server = selectedServer,
+                                progress = connectingProgress,
+                                logMessage = connectingLogMessage,
+                                langCode = selectedLanguageCode,
+                                onCancel = { viewModel.cancelConnecting() }
+                            )
+                        }
 
-                // 12-Second Disconnecting Modal Loader (Step 3 in Disconnection)
-                AnimatedVisibility(
-                    visible = isDisconnecting,
-                    enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f),
-                    exit = fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 1.05f)
-                ) {
-                    DisconnectingModalDialog(
-                        server = selectedServer,
-                        langCode = selectedLanguageCode,
-                        onCancel = { viewModel.cancelDisconnecting() }
-                    )
-                }
+                        // Disconnecting Modal Loader (Original circular spinner with power icon)
+                        AnimatedVisibility(
+                            visible = isDisconnecting,
+                            enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.95f),
+                            exit = fadeOut(animationSpec = tween(300)) + scaleOut(targetScale = 1.05f)
+                        ) {
+                            DisconnectingModalDialog(
+                                server = selectedServer,
+                                langCode = selectedLanguageCode,
+                                onCancel = { viewModel.cancelDisconnecting() }
+                            )
+                        }
 
-                // Disconnect Confirmation Dialog ("مطمئنی میخوای اتصال قطع بشه؟")
-                if (showDisconnectConfirm) {
-                    DisconnectConfirmDialog(
-                        langCode = selectedLanguageCode,
-                        onConfirm = { viewModel.confirmDisconnect(context) },
-                        onDismiss = { viewModel.dismissDisconnectConfirm() }
-                    )
+                        // Disconnect Confirmation Dialog ("مطمئنی میخوای اتصال قطع بشه؟")
+                        if (showDisconnectConfirm) {
+                            DisconnectConfirmDialog(
+                                langCode = selectedLanguageCode,
+                                onConfirm = { viewModel.confirmDisconnect(context) },
+                                onDismiss = { viewModel.dismissDisconnectConfirm() }
+                            )
+                        }
+                    }
                 }
             }
         }

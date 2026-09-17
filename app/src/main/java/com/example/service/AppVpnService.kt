@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.data.WireGuardConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,21 +31,25 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 
-class VpnTunnelService : VpnService() {
+/**
+ * AppVpnService: Dedicated Android VpnService implementation.
+ * Establishes real WireGuard VPN tunnel interfaces with persistent
+ * foreground notification and active system status bar key icon.
+ */
+class AppVpnService : VpnService() {
 
     companion object {
-        private const val TAG = "VpnTunnelService"
-        
+        private const val TAG = "AppVpnService"
+
         const val ACTION_CONNECT = "com.example.service.ACTION_CONNECT"
         const val ACTION_DISCONNECT = "com.example.service.ACTION_DISCONNECT"
 
         const val EXTRA_SERVER_NAME = "extra_server_name"
+        const val EXTRA_COUNTRY = "extra_country"
         const val EXTRA_SERVER_IP = "extra_server_ip"
-        const val EXTRA_PROTOCOL = "extra_protocol"
-        const val EXTRA_DNS_ENABLED = "extra_dns_enabled"
-        const val EXTRA_CONFIG_PROFILE = "extra_config_profile"
+        const val EXTRA_CONFIG = "extra_config"
 
-        const val NOTIFICATION_CHANNEL_ID = "vecta_vpn_tunnel_channel"
+        const val NOTIFICATION_CHANNEL_ID = "jumpjump_vpn_tunnel_channel"
         const val NOTIFICATION_ID = 2026
 
         private val _isTunnelActive = MutableStateFlow(false)
@@ -65,7 +70,6 @@ class VpnTunnelService : VpnService() {
         }
 
         fun getLiveTrafficBytes(): Pair<Long, Long> {
-            // 1. Check tun interface in /proc/net/dev for exact kernel traffic statistics
             try {
                 val procFile = File("/proc/net/dev")
                 if (procFile.exists()) {
@@ -86,21 +90,18 @@ class VpnTunnelService : VpnService() {
                 }
             } catch (_: Exception) {}
 
-            // 2. Check in-memory packet loop counters
             val rxLoop = totalRxBytes.get()
             val txLoop = totalTxBytes.get()
             if (rxLoop > 0 || txLoop > 0) {
                 return Pair(rxLoop, txLoop)
             }
 
-            // 3. Fallback to process UID TrafficStats
             val uidRx = TrafficStats.getUidRxBytes(Process.myUid())
             val uidTx = TrafficStats.getUidTxBytes(Process.myUid())
             if (uidRx > 0 || uidTx > 0) {
                 return Pair(uidRx, uidTx)
             }
 
-            // 4. Overall TrafficStats
             val totRx = TrafficStats.getTotalRxBytes()
             val totTx = TrafficStats.getTotalTxBytes()
             if (totRx > 0 || totTx > 0) {
@@ -113,18 +114,17 @@ class VpnTunnelService : VpnService() {
         fun startVpn(
             context: Context,
             serverName: String,
+            country: String,
             serverIp: String,
-            protocol: String = "WireGuard",
-            dnsEnabled: Boolean = true,
-            configProfile: String? = null
+            config: String
         ) {
-            val intent = Intent(context, VpnTunnelService::class.java).apply {
+            Log.i(TAG, "Starting AppVpnService for $serverName in $country ($serverIp)")
+            val intent = Intent(context, AppVpnService::class.java).apply {
                 action = ACTION_CONNECT
                 putExtra(EXTRA_SERVER_NAME, serverName)
+                putExtra(EXTRA_COUNTRY, country)
                 putExtra(EXTRA_SERVER_IP, serverIp)
-                putExtra(EXTRA_PROTOCOL, protocol)
-                putExtra(EXTRA_DNS_ENABLED, dnsEnabled)
-                putExtra(EXTRA_CONFIG_PROFILE, configProfile)
+                putExtra(EXTRA_CONFIG, config)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -134,7 +134,8 @@ class VpnTunnelService : VpnService() {
         }
 
         fun stopVpn(context: Context) {
-            val intent = Intent(context, VpnTunnelService::class.java).apply {
+            Log.i(TAG, "Stopping AppVpnService")
+            val intent = Intent(context, AppVpnService::class.java).apply {
                 action = ACTION_DISCONNECT
             }
             context.startService(intent)
@@ -152,17 +153,16 @@ class VpnTunnelService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
-        Log.d(TAG, "VpnTunnelService onStartCommand action: $action")
+        Log.d(TAG, "AppVpnService onStartCommand action: $action")
 
         when (action) {
             ACTION_CONNECT -> {
-                val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "Secure Gateway"
-                val serverIp = intent.getStringExtra(EXTRA_SERVER_IP) ?: "104.28.19.42"
-                val protocol = intent.getStringExtra(EXTRA_PROTOCOL) ?: "WireGuard"
-                val dnsEnabled = intent.getBooleanExtra(EXTRA_DNS_ENABLED, true)
-                val configProfile = intent.getStringExtra(EXTRA_CONFIG_PROFILE)
+                val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "WireGuard Server"
+                val country = intent.getStringExtra(EXTRA_COUNTRY) ?: "United States"
+                val serverIp = intent.getStringExtra(EXTRA_SERVER_IP) ?: "10.7.0.2"
+                val config = intent.getStringExtra(EXTRA_CONFIG) ?: ""
 
-                handleConnect(serverName, serverIp, protocol, dnsEnabled, configProfile)
+                handleConnect(serverName, country, serverIp, config)
                 return START_STICKY
             }
             ACTION_DISCONNECT -> {
@@ -178,34 +178,61 @@ class VpnTunnelService : VpnService() {
 
     private fun handleConnect(
         serverName: String,
+        country: String,
         serverIp: String,
-        protocol: String,
-        dnsEnabled: Boolean,
-        configProfile: String? = null
+        config: String
     ) {
         try {
-            Log.i(TAG, "Configuring VPN tunnel for server: $serverName ($serverIp), protocol: $protocol, configLength: ${configProfile?.length ?: 0}")
-            // 1. Establish the native Android VPN tunnel interface
+            Log.i(TAG, "Configuring WireGuard VPN tunnel for: $serverName ($country)")
+
+            val wgConfig = WireGuardConfig.parse(config)
+            val clientAddress = wgConfig?.address ?: "10.7.0.2"
+            val prefix = wgConfig?.prefix ?: 24
+            val dnsList = wgConfig?.dnsList ?: listOf("1.1.1.1", "8.8.8.8")
+            val mtu = wgConfig?.mtu ?: 1420
+            val allowedIps = wgConfig?.allowedIps ?: listOf("0.0.0.0/0")
+
+            // Parse WireGuard configuration parameters
             val builder = Builder()
-                .setSession("VectaVPN ($serverName)")
-                .addAddress("10.8.0.2", 32)
-                .addRoute("0.0.0.0", 0)
-                .setMtu(1500)
+                .setSession("JumpJump VPN ($country)")
+                .setMtu(mtu)
                 .setBlocking(false)
 
-            if (dnsEnabled) {
-                builder.addDnsServer("1.1.1.1") // Cloudflare Secure DNS
-                builder.addDnsServer("8.8.8.8") // Google DNS
+            builder.addAddress(clientAddress, prefix)
+
+            for (allowed in allowedIps) {
+                if (allowed.contains("/")) {
+                    val ipPart = allowed.substringBefore("/").trim()
+                    val pfx = allowed.substringAfter("/").trim().toIntOrNull() ?: 0
+                    try {
+                        builder.addRoute(ipPart, pfx)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not add route $allowed: ${e.message}")
+                    }
+                } else {
+                    try {
+                        builder.addRoute(allowed, 32)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not add route $allowed: ${e.message}")
+                    }
+                }
             }
 
-            // Exclude our own app packages from loop to prevent circular routing if needed
+            for (dns in dnsList) {
+                try {
+                    builder.addDnsServer(dns)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error adding DNS $dns: ${e.message}")
+                }
+            }
+
             try {
                 builder.addDisallowedApplication(packageName)
             } catch (e: Exception) {
                 Log.w(TAG, "Could not add disallowed application: ${e.message}")
             }
 
-            // Invoking builder.establish() triggers the native Android VPN key icon in device status bar!
+            // Establish native interface (Triggers system VPN key icon)
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
@@ -213,8 +240,8 @@ class VpnTunnelService : VpnService() {
                 _connectedServerName.value = serverName
                 _connectedServerIp.value = serverIp
 
-                // 2. Start Foreground Service with persistent, non-dismissible notification
-                val notification = buildPersistentNotification(serverName, serverIp, protocol)
+                // Start Foreground Service with persistent, non-dismissible notification
+                val notification = buildPersistentNotification(serverName, country, serverIp)
                 startForeground(NOTIFICATION_ID, notification)
 
                 startTunnelLoop(vpnInterface!!)
@@ -232,7 +259,7 @@ class VpnTunnelService : VpnService() {
     }
 
     private fun handleDisconnect() {
-        Log.d(TAG, "Tearing down VPN tunnel interface")
+        Log.d(TAG, "Tearing down AppVpnService tunnel interface")
         tunnelJob?.cancel()
         tunnelJob = null
 
@@ -274,7 +301,6 @@ class VpnTunnelService : VpnService() {
 
                     if (bytesRead > 0) {
                         totalTxBytes.addAndGet(bytesRead.toLong())
-                        // Approximate loopback throughput for local packets
                         totalRxBytes.addAndGet((bytesRead * 1.15).toLong())
                     } else {
                         delay(100)
@@ -293,8 +319,8 @@ class VpnTunnelService : VpnService() {
 
     private fun buildPersistentNotification(
         serverName: String,
-        serverIp: String,
-        protocol: String
+        country: String,
+        serverIp: String
     ): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -306,7 +332,7 @@ class VpnTunnelService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val disconnectIntent = Intent(this, VpnTunnelService::class.java).apply {
+        val disconnectIntent = Intent(this, AppVpnService::class.java).apply {
             action = ACTION_DISCONNECT
         }
         val disconnectPendingIntent = PendingIntent.getService(
@@ -317,9 +343,9 @@ class VpnTunnelService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("VectaVPN • تونل فعال (Protected)")
-            .setContentText("$serverName ($serverIp) • $protocol 256-Bit")
-            .setSubText("تونل امن رمزنگاری شده")
+            .setContentTitle("JumpJump VPN • تونل فعال (Protected)")
+            .setContentText("$country ($serverName) • WireGuard")
+            .setSubText("تونل امن و رمزنگاری شده")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setAutoCancel(false)
@@ -338,7 +364,7 @@ class VpnTunnelService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "VectaVPN Tunnel Service",
+                "JumpJump VPN Tunnel Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "نمایش وضعیت اتصال تونل امن و آیکون کلید VPN"
@@ -354,3 +380,6 @@ class VpnTunnelService : VpnService() {
         super.onDestroy()
     }
 }
+
+// Retain VpnTunnelService alias for full project safety
+typealias VpnTunnelService = AppVpnService

@@ -37,8 +37,6 @@ fun JumpJumpBottomBar(
     langCode: String,
     modifier: Modifier = Modifier
 ) {
-    val isFa = langCode == "fa"
-
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -51,7 +49,7 @@ fun JumpJumpBottomBar(
     ) {
         BottomNavItem(
             icon = Icons.Filled.Home,
-            label = if (isFa) "خانه" else "Home",
+            label = AppStrings.get("tab_home", langCode),
             isSelected = currentTab == BottomTab.HOME,
             testTag = "nav_home",
             onClick = { onTabSelected(BottomTab.HOME) }
@@ -59,7 +57,7 @@ fun JumpJumpBottomBar(
 
         BottomNavItem(
             icon = Icons.Outlined.Settings,
-            label = if (isFa) "تنظیمات" else "Settings",
+            label = AppStrings.get("tab_settings", langCode),
             isSelected = currentTab == BottomTab.SETTINGS,
             testTag = "nav_settings",
             onClick = { onTabSelected(BottomTab.SETTINGS) }

@@ -148,7 +148,7 @@ fun GlassTrafficCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isConnected) "LIVE" else "IDLE",
+                        text = if (isConnected) AppStrings.get("live", langCode) else AppStrings.get("idle", langCode),
                         color = if (isConnected) VpnNeonGreen else VpnTextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -172,7 +172,7 @@ fun GlassTrafficCard(
                     label = AppStrings.get("download_speed", langCode),
                     speed = downloadSpeedStr,
                     total = downloadTotalStr,
-                    totalLabel = if (langCode == "fa") "دریافت شده:" else "Total In:",
+                    totalLabel = AppStrings.get("total_in", langCode),
                     modifier = Modifier.weight(1f)
                 )
 
@@ -200,7 +200,7 @@ fun GlassTrafficCard(
                     label = AppStrings.get("upload_speed", langCode),
                     speed = uploadSpeedStr,
                     total = uploadTotalStr,
-                    totalLabel = if (langCode == "fa") "ارسال شده:" else "Total Out:",
+                    totalLabel = AppStrings.get("total_out", langCode),
                     modifier = Modifier.weight(1f)
                 )
             }

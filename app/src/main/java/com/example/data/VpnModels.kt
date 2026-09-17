@@ -21,19 +21,59 @@ data class Language(
     val isRtl: Boolean = false
 )
 
-data class VpnServer(
-    val id: String,
-    val name: String,
-    val countryCode: String,
-    val pingMs: Int,
-    val ipAddress: String,
+data class ServerModel(
+    val server_name: String,
+    val country: String,
+    val country_code: String,
+    val config: String,
+    val icon: String = countryCodeToEmoji(country_code),
+    val pingMs: Int = 45,
     val isFastest: Boolean = false,
-    val isFree: Boolean = true,
-    val nameFa: String = name,
-    val protocol: String = "WireGuard",
-    val port: Int = 51820,
-    val configProfile: String? = null
-)
+    val isFree: Boolean = true
+) {
+    val id: String get() = server_name
+    val name: String get() = country.ifEmpty { server_name }
+    val countryCode: String get() = country_code
+    val nameFa: String get() = country
+    val protocol: String get() = "WireGuard"
+    val wireGuardConfig: WireGuardConfig? get() = WireGuardConfig.parse(config)
+    val port: Int get() = wireGuardConfig?.endpointPort ?: 51820
+    val configProfile: String get() = config
+    val ipAddress: String get() = wireGuardConfig?.endpointHost?.ifBlank { null } ?: extractEndpointIp(config)
+    val endpointHost: String get() = ipAddress
+
+    companion object {
+        fun countryCodeToEmoji(countryCode: String): String {
+            val clean = countryCode.trim().uppercase()
+            if (clean.length != 2) return "🌐"
+            return try {
+                val first = Character.codePointAt(clean, 0) - 0x41 + 0x1F1E6
+                val second = Character.codePointAt(clean, 1) - 0x41 + 0x1F1E6
+                String(Character.toChars(first)) + String(Character.toChars(second))
+            } catch (_: Exception) {
+                "🌐"
+            }
+        }
+
+        fun extractEndpointIp(config: String): String {
+            return try {
+                val lines = config.lines()
+                for (line in lines) {
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("Endpoint", ignoreCase = true) && trimmed.contains("=")) {
+                        val endpoint = trimmed.substringAfter("=").trim()
+                        return endpoint.substringBefore(":")
+                    }
+                }
+                "10.7.0.2"
+            } catch (_: Exception) {
+                "10.7.0.2"
+            }
+        }
+    }
+}
+
+typealias VpnServer = ServerModel
 
 data class VpnStats(
     val durationSeconds: Long = 0L,
@@ -59,14 +99,6 @@ object DefaultData {
         Language("ja", "Japanese", "日本語", "JP", "🇯🇵")
     )
 
-    val servers = listOf(
-        VpnServer("usa_1", "United States", "US", 120, "104.28.19.42", isFastest = true, nameFa = "ایالات متحده"),
-        VpnServer("de_1", "Germany", "DE", 85, "185.220.101.5", nameFa = "آلمان"),
-        VpnServer("uk_1", "United Kingdom", "GB", 95, "194.187.249.20", nameFa = "انگلستان"),
-        VpnServer("nl_1", "Netherlands", "NL", 110, "185.107.56.12", nameFa = "هلند"),
-        VpnServer("fr_1", "France", "FR", 115, "51.15.23.11", nameFa = "فرانسه"),
-        VpnServer("ca_1", "Canada", "CA", 145, "192.99.148.10", nameFa = "کانادا"),
-        VpnServer("jp_1", "Japan", "JP", 210, "133.242.18.9", nameFa = "ژاپن"),
-        VpnServer("sg_1", "Singapore", "SG", 180, "139.59.245.1", nameFa = "سنگاپور")
-    )
+    // Strictly empty list - NO fake or mock servers
+    val servers: List<ServerModel> = emptyList()
 }

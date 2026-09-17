@@ -37,7 +37,7 @@
         </activity>
 
         <service
-            android:name=".service.VpnTunnelService"
+            android:name=".service.AppVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
             android:exported="false">

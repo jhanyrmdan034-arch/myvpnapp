@@ -8,8 +8,9 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,16 +43,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.VpnServer
+import com.example.data.AppStrings
+import com.example.data.ServerModel
 
+/**
+ * DisconnectingModalDialog displays the clean circular spinner with power icon
+ * during VPN disconnection, with full localized string support.
+ */
 @Composable
 fun DisconnectingModalDialog(
-    server: VpnServer,
+    server: ServerModel?,
     langCode: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isFa = langCode == "fa"
     val jumpJumpBlue = Color(0xFF3A82F7)
 
     // Infinite smooth rotation for the blue loader arc
@@ -71,7 +76,12 @@ fun DisconnectingModalDialog(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.65f))
-            .clickable(onClick = { /* prevent backdrop tap dismiss */ }, enabled = false),
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { /* prevent backdrop tap dismiss */ }
+            )
+            .testTag("disconnecting_modal_dialog"),
         contentAlignment = Alignment.Center
     ) {
         Card(
@@ -91,7 +101,7 @@ fun DisconnectingModalDialog(
             ) {
                 // Title
                 Text(
-                    text = if (isFa) "...در حال قطع اتصال VPN" else "Disconnecting VPN...",
+                    text = AppStrings.get("disconnecting_title", langCode),
                     color = Color(0xFF1E2638),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -102,7 +112,7 @@ fun DisconnectingModalDialog(
 
                 // Subtitle
                 Text(
-                    text = if (isFa) "...لطفاً منتظر بمانید" else "Please wait...",
+                    text = AppStrings.get("please_wait", langCode),
                     color = Color(0xFF7A869A),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
@@ -111,7 +121,7 @@ fun DisconnectingModalDialog(
 
                 Spacer(modifier = Modifier.height(34.dp))
 
-                // Pure Blue Spinner Arc WITHOUT ANY NUMBER (exact user request)
+                // Pure Blue Spinner Arc with Power Icon (Original loader)
                 Box(
                     modifier = Modifier.size(105.dp),
                     contentAlignment = Alignment.Center
@@ -135,7 +145,7 @@ fun DisconnectingModalDialog(
                         )
                     }
 
-                    // Subtle power icon in center (NO numbers or text!)
+                    // Subtle power icon in center
                     Box(
                         modifier = Modifier
                             .size(42.dp)
@@ -152,56 +162,58 @@ fun DisconnectingModalDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                // Server flag and name
+                // Target Server Preview Pill
+                val countryCode = server?.country_code ?: "US"
+                val serverDisplayName = server?.server_name?.ifBlank { null }
+                    ?: server?.country?.ifBlank { null }
+                    ?: AppStrings.getServerName(countryCode, langCode)
+
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFFF3F5F9))
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFF8FAFC))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CountryFlag(
-                        countryCode = server.countryCode,
-                        modifier = Modifier.size(22.dp)
+                        countryCode = countryCode,
+                        size = 22.dp
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = if (isFa) server.nameFa else server.name,
+                        text = serverDisplayName,
                         color = Color(0xFF1E2638),
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
-                // Cancel button
+                // Cancel Button
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFFE8EEF8))
-                        .clickable(onClick = onCancel)
-                        .padding(horizontal = 24.dp, vertical = 10.dp)
-                        .testTag("btn_cancel_disconnecting"),
+                        .fillMaxWidth(0.75f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFFEE2E2))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onCancel
+                        )
+                        .padding(vertical = 11.dp)
+                        .testTag("dialog_cancel_disconnect_button"),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = null,
-                            tint = Color(0xFF3A82F7),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isFa) "انصراف" else "Cancel",
-                            color = Color(0xFF3A82F7),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Text(
+                        text = AppStrings.get("cancel", langCode),
+                        color = Color(0xFFDC2626),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

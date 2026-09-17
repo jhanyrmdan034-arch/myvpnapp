@@ -80,7 +80,6 @@ fun SettingsTabContent(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-    val isFa = langCode == "fa"
     val currentLang = DefaultData.languages.find { it.code == langCode } ?: DefaultData.languages.first()
 
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -94,15 +93,15 @@ fun SettingsTabContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = if (isFa) "تنظیمات" else "Settings",
+            text = AppStrings.get("settings", langCode),
             color = VpnTextPrimary,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold
         )
 
-        // Section: General & Communication (اشتراک گذاری، ارتباط با ما، درباره ما)
+        // Section: General & Communication
         Text(
-            text = if (isFa) "عمومی و ارتباطات" else "General & Support",
+            text = AppStrings.get("general_support", langCode),
             color = VpnTextSecondary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -116,10 +115,10 @@ fun SettingsTabContent(
                 .border(1.dp, VpnCardBorder, RoundedCornerShape(20.dp))
                 .padding(vertical = 4.dp)
         ) {
-            // Share App (اشتراک‌گذاری)
+            // Share App
             SettingsMenuRow(
                 icon = Icons.Outlined.Share,
-                title = if (isFa) "اشتراک‌گذاری برنامه" else "Share App",
+                title = AppStrings.get("share_app", langCode),
                 trailingContent = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -129,15 +128,15 @@ fun SettingsTabContent(
                     )
                 },
                 onClick = {
-                    shareApp(context, isFa)
+                    shareApp(context, langCode)
                 },
                 testTag = "settings_share_app"
             )
 
-            // Contact Us (ارتباط با ما: jhanyrmdan034@gmail.com)
+            // Contact Us
             SettingsMenuRow(
                 icon = Icons.Outlined.Email,
-                title = if (isFa) "ارتباط با ما" else "Contact Us",
+                title = AppStrings.get("contact_us", langCode),
                 subtitle = "jhanyrmdan034@gmail.com",
                 trailingContent = {
                     Icon(
@@ -148,15 +147,15 @@ fun SettingsTabContent(
                     )
                 },
                 onClick = {
-                    sendEmailToSupport(context, isFa)
+                    sendEmailToSupport(context, langCode)
                 },
                 testTag = "settings_contact_us"
             )
 
-            // About Us (درباره ما)
+            // About Us
             SettingsMenuRow(
                 icon = Icons.Outlined.Info,
-                title = if (isFa) "درباره ما" else "About Us",
+                title = AppStrings.get("about_us", langCode),
                 trailingContent = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -172,7 +171,7 @@ fun SettingsTabContent(
 
         // Section: Security & Connection
         Text(
-            text = if (isFa) "امنیت و اتصال" else "Security & Connection",
+            text = AppStrings.get("security_connection", langCode),
             color = VpnTextSecondary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -204,13 +203,13 @@ fun SettingsTabContent(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = if (isFa) "کیل سوئیچ (Kill Switch)" else "Kill Switch",
+                            text = AppStrings.get("kill_switch", langCode),
                             color = VpnTextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = if (isFa) "قطع اینترنت در صورت قطعی VPN" else "Block internet on disconnect",
+                            text = AppStrings.get("kill_switch_desc", langCode),
                             color = VpnTextMuted,
                             fontSize = 12.sp
                         )
@@ -246,13 +245,13 @@ fun SettingsTabContent(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = if (isFa) "محافظت DNS ضد فیلتر" else "DNS Leak Protection",
+                            text = AppStrings.get("dns_leak_protect", langCode),
                             color = VpnTextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = if (isFa) "رمزنگاری تمام کوئری‌های DNS" else "Encrypted 1.1.1.1 DNS queries",
+                            text = AppStrings.get("dns_leak_desc", langCode),
                             color = VpnTextMuted,
                             fontSize = 12.sp
                         )
@@ -273,7 +272,7 @@ fun SettingsTabContent(
 
         // Section: Preferences
         Text(
-            text = if (isFa) "ترجیحات" else "Preferences",
+            text = AppStrings.get("preferences", langCode),
             color = VpnTextSecondary,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -290,7 +289,7 @@ fun SettingsTabContent(
             // Language
             SettingsMenuRow(
                 icon = Icons.Outlined.Language,
-                title = if (isFa) "تغییر زبان" else "Change Language",
+                title = AppStrings.get("change_language", langCode),
                 trailingContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CountryFlag(countryCode = currentLang.countryCode, size = 22.dp)
@@ -309,7 +308,7 @@ fun SettingsTabContent(
             // Privacy Policy
             SettingsMenuRow(
                 icon = Icons.Outlined.Policy,
-                title = if (isFa) "سیاست حفظ حریم خصوصی" else "Privacy Policy",
+                title = AppStrings.get("privacy_policy", langCode),
                 trailingContent = {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
@@ -371,17 +370,14 @@ fun SettingsTabContent(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = if (isFa) "درباره VectaVPN" else "About VectaVPN",
+                    text = AppStrings.get("about_title", langCode),
                     color = VpnTextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = if (isFa)
-                        "اپلیکیشن VectaVPN ارائه‌دهنده تونل‌های اختصاصی با رمزنگاری پیشرفته ChaCha20 و پروتکل‌های فوق سریع است.\n\nما متعهد به خط‌مشی Zero-Log (عدم ثبت گزارش فعالیت) هستیم و حریم خصوصی شما همواره محفوظ است."
-                    else
-                        "VectaVPN provides high-speed, military-grade encrypted tunnels with strict Zero-Log privacy protection worldwide.",
+                    text = AppStrings.get("about_desc", langCode),
                     color = VpnTextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 20.sp
@@ -397,7 +393,7 @@ fun SettingsTabContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (isFa) "متوجه شدم" else "Got It",
+                        text = AppStrings.get("got_it", langCode),
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -408,11 +404,12 @@ fun SettingsTabContent(
     }
 }
 
-private fun sendEmailToSupport(context: Context, isFa: Boolean) {
+private fun sendEmailToSupport(context: Context, langCode: String) {
+    val subject = AppStrings.get("email_subject", langCode)
     try {
         val intent = Intent(Intent.ACTION_SENDTO).apply {
             data = Uri.parse("mailto:jhanyrmdan034@gmail.com")
-            putExtra(Intent.EXTRA_SUBJECT, if (isFa) "ارتباط با پشتیبانی VectaVPN" else "Contact VectaVPN Support")
+            putExtra(Intent.EXTRA_SUBJECT, subject)
         }
         context.startActivity(intent)
     } catch (e: Exception) {
@@ -420,28 +417,22 @@ private fun sendEmailToSupport(context: Context, isFa: Boolean) {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "message/rfc822"
                 putExtra(Intent.EXTRA_EMAIL, arrayOf("jhanyrmdan034@gmail.com"))
-                putExtra(Intent.EXTRA_SUBJECT, if (isFa) "ارتباط با پشتیبانی VectaVPN" else "Contact VectaVPN Support")
+                putExtra(Intent.EXTRA_SUBJECT, subject)
             }
-            context.startActivity(Intent.createChooser(intent, if (isFa) "ارسال ایمیل" else "Send Email"))
+            context.startActivity(Intent.createChooser(intent, "Email"))
         } catch (e2: Exception) {
             android.widget.Toast.makeText(context, "jhanyrmdan034@gmail.com", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 }
 
-private fun shareApp(context: Context, isFa: Boolean) {
+private fun shareApp(context: Context, langCode: String) {
     val sendIntent = Intent().apply {
         action = Intent.ACTION_SEND
-        putExtra(
-            Intent.EXTRA_TEXT,
-            if (isFa)
-                "اپلیکیشن فیلترشکن VectaVPN با سرعت بالا و امنیت کامل:\nhttps://vectavpn.app"
-            else
-                "Download VectaVPN for fast, secure and private internet:\nhttps://vectavpn.app"
-        )
+        putExtra(Intent.EXTRA_TEXT, AppStrings.get("share_text", langCode))
         type = "text/plain"
     }
-    val shareIntent = Intent.createChooser(sendIntent, if (isFa) "اشتراک‌گذاری VectaVPN" else "Share VectaVPN")
+    val shareIntent = Intent.createChooser(sendIntent, AppStrings.get("share_app", langCode))
     context.startActivity(shareIntent)
 }
 
@@ -450,7 +441,7 @@ private fun SettingsMenuRow(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
-    trailingContent: @Composable () -> Unit,
+    trailingContent: @Composable () -> Unit = {},
     onClick: () -> Unit,
     testTag: String
 ) {
@@ -458,14 +449,14 @@ private fun SettingsMenuRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 13.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag(testTag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f, fill = false)
+            modifier = Modifier.weight(1f)
         ) {
             Icon(
                 imageVector = icon,
@@ -482,12 +473,10 @@ private fun SettingsMenuRow(
                     fontWeight = FontWeight.Medium
                 )
                 if (subtitle != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        color = Color(0xFF3A82F7),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal
+                        color = VpnTextMuted,
+                        fontSize = 12.sp
                     )
                 }
             }

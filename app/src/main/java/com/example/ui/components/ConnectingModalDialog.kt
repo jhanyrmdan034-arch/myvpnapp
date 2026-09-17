@@ -53,15 +53,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.VpnServer
+import com.example.data.AppStrings
+import com.example.data.ServerModel
 
 @Composable
 fun ConnectingModalDialog(
-    server: VpnServer,
+    server: ServerModel?,
     progress: Float,
-    remainingSeconds: Int,
-    currentStep: Int,
-    logMessage: String,
+    remainingSeconds: Int = 0,
+    currentStep: Int = 0,
+    logMessage: String = "",
     langCode: String,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier
@@ -99,7 +100,7 @@ fun ConnectingModalDialog(
             .testTag("connecting_modal_dialog"),
         contentAlignment = Alignment.Center
     ) {
-        // Centered White Dialog Card (matching disconnecting dialog as requested)
+        // Centered White Dialog Card
         Card(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
@@ -146,7 +147,7 @@ fun ConnectingModalDialog(
 
                 // Title (Dark text for white card)
                 Text(
-                    text = if (isFa) "...در حال اتصال است VPN" else "VPN is connecting...",
+                    text = AppStrings.get("connecting_title", langCode),
                     color = Color(0xFF1E2638),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -157,7 +158,7 @@ fun ConnectingModalDialog(
 
                 // Subtitle
                 Text(
-                    text = if (isFa) "...لطفاً منتظر بمانید" else "Please wait...",
+                    text = AppStrings.get("please_wait", langCode),
                     color = Color(0xFF7A869A),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
@@ -227,24 +228,25 @@ fun ConnectingModalDialog(
                     )
                 }
 
+                if (logMessage.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = logMessage,
+                        color = jumpJumpBlue,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(18.dp))
 
                 // Target Server Preview Pill (No Ping!)
-                val serverDisplayName = if (isFa) {
-                    when (server.countryCode) {
-                        "US" -> "ایالات متحده"
-                        "DE" -> "آلمان"
-                        "GB" -> "انگلستان"
-                        "CA" -> "کانادا"
-                        "NL" -> "هلند"
-                        "FR" -> "فرانسه"
-                        "JP" -> "ژاپن"
-                        "SG" -> "سنگاپور"
-                        else -> server.nameFa
-                    }
-                } else {
-                    server.name
-                }
+                val countryCode = server?.country_code ?: "US"
+                val serverDisplayName = server?.server_name?.ifBlank { null }
+                    ?: server?.country?.ifBlank { null }
+                    ?: AppStrings.getServerName(countryCode, langCode)
 
                 Row(
                     modifier = Modifier
@@ -255,7 +257,7 @@ fun ConnectingModalDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CountryFlag(
-                        countryCode = server.countryCode,
+                        countryCode = countryCode,
                         size = 22.dp
                     )
                     Spacer(modifier = Modifier.width(10.dp))
@@ -285,7 +287,7 @@ fun ConnectingModalDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (isFa) "لغو اتصال" else "Cancel",
+                        text = AppStrings.get("cancel_connection", langCode),
                         color = Color(0xFFDC2626),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold

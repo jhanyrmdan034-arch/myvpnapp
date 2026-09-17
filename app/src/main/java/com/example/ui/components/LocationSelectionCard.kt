@@ -23,7 +23,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -45,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.AppStrings
-import com.example.data.VpnServer
+import com.example.data.ServerModel
 import com.example.ui.theme.VpnNeonGreen
 import com.example.ui.theme.VpnTextMuted
 import com.example.ui.theme.VpnTextPrimary
@@ -55,18 +57,21 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationSelectionCard(
-    servers: List<VpnServer>,
-    selectedServerId: String,
+    servers: List<ServerModel>,
+    selectedServer: ServerModel?,
     langCode: String,
-    onSelectServer: (VpnServer) -> Unit,
+    isFetching: Boolean = false,
+    fetchError: String? = null,
+    onRetry: () -> Unit = {},
+    onSelectServer: (ServerModel) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isFa = langCode == "fa"
     var showSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
+    val isFa = langCode == "fa"
 
-    val currentServer = servers.find { it.id == selectedServerId } ?: servers.firstOrNull()
+    val currentServer = selectedServer ?: servers.firstOrNull()
 
     // 1. Sleek Server Selection Card on the Home Screen (Without Ping)
     Box(
@@ -93,7 +98,11 @@ fun LocationSelectionCard(
                 shape = RoundedCornerShape(20.dp)
             )
             .clickable {
-                showSheet = true
+                if (servers.isNotEmpty()) {
+                    showSheet = true
+                } else {
+                    onRetry()
+                }
             }
             .padding(horizontal = 16.dp, vertical = 14.dp)
             .testTag("location_selection_card")
@@ -110,7 +119,47 @@ fun LocationSelectionCard(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                if (currentServer != null) {
+                if (isFetching && servers.isEmpty()) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.5.dp,
+                        color = Color(0xFF3A82F7)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = if (isFa) "در حال دریافت سرورها..." else "Loading servers...",
+                        color = VpnTextSecondary,
+                        fontSize = 14.sp
+                    )
+                } else if (servers.isEmpty()) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Retry",
+                        tint = Color(0xFFFF6B6B),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = if (isFa) "خطا در دریافت سرورها" else "Server list offline",
+                            color = Color(0xFFFF6B6B),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (isFa) "برای تلاش مجدد کلیک کنید" else "Tap to retry",
+                            color = VpnTextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else if (currentServer != null) {
+                    val countryCode = currentServer.country_code
+                    val countryDisplayName = if (currentServer.country.isNotBlank()) {
+                        currentServer.country
+                    } else {
+                        AppStrings.getServerName(countryCode, langCode)
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(46.dp)
@@ -119,14 +168,14 @@ fun LocationSelectionCard(
                             .border(1.5.dp, Color(0xFF3A82F7).copy(alpha = 0.4f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        CountryFlag(countryCode = currentServer.countryCode, size = 28.dp)
+                        CountryFlag(countryCode = countryCode, size = 28.dp)
                     }
 
                     Spacer(modifier = Modifier.width(14.dp))
 
                     Column {
                         Text(
-                            text = if (isFa) "لوکیشن سرور انتخابی" else "Selected Server Location",
+                            text = AppStrings.get("selected_server_location", langCode),
                             color = VpnTextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Normal
@@ -135,42 +184,46 @@ fun LocationSelectionCard(
                         Spacer(modifier = Modifier.height(3.dp))
 
                         Text(
-                            text = if (isFa) currentServer.nameFa else currentServer.name,
+                            text = countryDisplayName,
                             color = VpnTextPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
-                } else {
-                    Text(
-                        text = AppStrings.get("select_location", langCode),
-                        color = VpnTextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
                 }
             }
 
-            // "Change" pill button on the right
+            // "Change" or "Retry" pill button on the right
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xFF222F47))
                     .border(1.dp, Color(0xFF3A82F7).copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .clickable {
+                        if (servers.isNotEmpty()) {
+                            showSheet = true
+                        } else {
+                            onRetry()
+                        }
+                    }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (isFa) "تغییر سرور" else "Change",
+                        text = if (servers.isEmpty()) {
+                            if (isFa) "تلاش مجدد" else "Retry"
+                        } else {
+                            AppStrings.get("change_server", langCode)
+                        },
                         color = Color(0xFF60A5FA),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Open server list",
+                        imageVector = if (servers.isEmpty()) Icons.Default.Refresh else Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Action",
                         tint = Color(0xFF60A5FA),
                         modifier = Modifier.size(16.dp)
                     )
@@ -212,33 +265,33 @@ fun LocationSelectionCard(
                 ) {
                     Column {
                         Text(
-                            text = if (isFa) "انتخاب لوکیشن سرور" else "Select Server Location",
+                            text = AppStrings.get("select_location", langCode),
                             color = VpnTextPrimary,
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (isFa) "${servers.size} سرور پرسرعت اختصاصی" else "${servers.size} High-Speed Locations",
+                            text = "${servers.size} ${AppStrings.get("high_speed_locations", langCode)}",
                             color = VpnTextSecondary,
                             fontSize = 12.sp
                         )
                     }
 
-                    // Prominent Close (X) Button (گزینه ضربدر برای بستن کادر)
+                    // Prominent Close (X) Button
                     Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF222B3D))
                             .border(1.dp, Color(0xFF3A82F7).copy(alpha = 0.3f), CircleShape)
-                            .clickable {
-                                coroutineScope.launch {
-                                    sheetState.hide()
-                                    showSheet = false
-                                }
+                        .clickable {
+                            coroutineScope.launch {
+                                sheetState.hide()
+                                showSheet = false
                             }
-                            .testTag("close_server_modal"),
+                        }
+                        .testTag("close_server_modal"),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -259,13 +312,13 @@ fun LocationSelectionCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isFa) "سرورهای موجود" else "Available Locations",
+                        text = AppStrings.get("available_locations", langCode),
                         color = VpnTextMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = if (isFa) "پروتکل امن WireGuard®" else "WireGuard® Protocol",
+                        text = "WireGuard Protocol",
                         color = Color(0xFF3A82F7),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
@@ -274,7 +327,7 @@ fun LocationSelectionCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Scrollable List of Servers (No Ping, Just Clean Flag, Name, and Selection Check)
+                // Scrollable List of Servers from GitHub
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -283,7 +336,14 @@ fun LocationSelectionCard(
                     contentPadding = PaddingValues(top = 4.dp, bottom = 28.dp)
                 ) {
                     items(servers, key = { it.id }) { server ->
-                        val isSelected = server.id == selectedServerId
+                        val isSelected = server.id == (currentServer?.id ?: "") ||
+                            (server.country_code.equals(currentServer?.country_code, ignoreCase = true) && server.server_name.equals(currentServer?.server_name, ignoreCase = true))
+
+                        val countryDisplayName = if (server.country.isNotBlank()) {
+                            server.country
+                        } else {
+                            AppStrings.getServerName(server.country_code, langCode)
+                        }
 
                         Box(
                             modifier = Modifier
@@ -302,6 +362,10 @@ fun LocationSelectionCard(
                                 )
                                 .clickable {
                                     onSelectServer(server)
+                                    coroutineScope.launch {
+                                        sheetState.hide()
+                                        showSheet = false
+                                    }
                                 }
                                 .padding(horizontal = 16.dp, vertical = 14.dp)
                                 .testTag("server_item_${server.id}")
@@ -324,7 +388,7 @@ fun LocationSelectionCard(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         CountryFlag(
-                                            countryCode = server.countryCode,
+                                            countryCode = server.country_code,
                                             size = 28.dp
                                         )
                                     }
@@ -333,14 +397,14 @@ fun LocationSelectionCard(
 
                                     Column {
                                         Text(
-                                            text = if (isFa) server.nameFa else server.name,
+                                            text = countryDisplayName,
                                             color = if (isSelected) VpnNeonGreen else VpnTextPrimary,
                                             fontSize = 15.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = "${server.ipAddress} • 10 Gbps",
+                                            text = "${server.server_name} • WireGuard",
                                             color = VpnTextMuted,
                                             fontSize = 11.sp
                                         )

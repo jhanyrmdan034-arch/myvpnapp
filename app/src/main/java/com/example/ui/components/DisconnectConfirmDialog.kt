@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.AppStrings
 import com.example.ui.theme.VpnSurface
 import com.example.ui.theme.VpnTextPrimary
 import com.example.ui.theme.VpnTextSecondary
@@ -41,9 +42,6 @@ fun DisconnectConfirmDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isFa = langCode == "fa"
-    val jumpJumpBlue = Color(0xFF3A82F7)
-
     BasicAlertDialog(
         onDismissRequest = onDismiss,
         modifier = modifier
@@ -74,7 +72,7 @@ fun DisconnectConfirmDialog(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = if (isFa) "قطع اتصال VPN" else "Disconnect VPN",
+                text = AppStrings.get("disconnect_dialog_title", langCode),
                 color = VpnTextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
@@ -84,10 +82,7 @@ fun DisconnectConfirmDialog(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = if (isFa)
-                    "آیا مطمئن هستید که می‌خواهید اتصال را قطع کنید؟"
-                else
-                    "Are you sure you want to disconnect from the VPN?",
+                text = AppStrings.get("disconnect_dialog_msg", langCode),
                 color = VpnTextSecondary,
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center
@@ -99,7 +94,7 @@ fun DisconnectConfirmDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Cancel (لغو)
+                // Cancel button
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -111,14 +106,14 @@ fun DisconnectConfirmDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (isFa) "لغو" else "Cancel",
+                        text = AppStrings.get("cancel", langCode),
                         color = VpnTextPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                // Confirm (تأیید)
+                // Confirm Disconnect button
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -130,7 +125,7 @@ fun DisconnectConfirmDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (isFa) "تأیید" else "Disconnect",
+                        text = AppStrings.get("confirm_disconnect", langCode),
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
