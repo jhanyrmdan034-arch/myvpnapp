@@ -1,131 +1,84 @@
-package com.example.service
+package com.example.data
 
-import android.content.Intent
-import android.net.VpnService
-import android.os.ParcelFileDescriptor
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONArray
+import java.util.concurrent.TimeUnit
 
-class MyVpnService : VpnService() {
+class RemoteConfigException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
-    private var vpnInterface: ParcelFileDescriptor? = null
-    private var serviceJob: Job? = null
-    private val serviceScope = CoroutineScope(Dispatchers.Main)
-
+class VpnRemoteConfigRepository(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+) {
     companion object {
-        private const val TAG = "MyVpnService"
-        const val ACTION_CONNECT = "com.example.vpn.START"
-        const val ACTION_DISCONNECT = "com.example.vpn.STOP"
-        const val EXTRA_CONFIG = "vpn_config_data"
+        private const val TAG = "VpnRemoteConfig"
+        const val GITHUB_SERVERS_URL = "https://githubusercontent.com"
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_CONNECT -> {
-                val config = intent.getStringExtra(EXTRA_CONFIG) ?: ""
-                processConnection(config)
-            }
-            ACTION_DISCONNECT -> {
-                processDisconnection()
-            }
-        }
-        return START_NOTIFY_FLAGS
-    }
+    suspend fun fetchServers(targetUrl: String = GITHUB_SERVERS_URL): List<ServerModel> = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(targetUrl)
+            .header("User-Agent", "Mozilla/5.0")
+            .header("Cache-Control", "no-cache")
+            .build()
 
-    /**
-     * مدیریت اتصال واقعی و کاملاً ایمن بر پایه پروتکل متنی VLESS
-     */
-    private fun processConnection(vlessConfig: String) {
-        serviceJob?.cancel()
-        serviceJob = serviceScope.launch(Dispatchers.IO) {
-            try {
-                // اگر کانفیگ خالی یا نامعتبر بود بلافاصله متوقف شود بدون نشان دادن ارور فنی به کاربر
-                if (vlessConfig.isBlank() || !vlessConfig.startsWith("vless://")) {
-                    sendStateBroadcast("ERROR_CONNECTION_FAILED")
-                    stopSelf()
-                    return@launch
-                }
-
-                // ساخت تونل بومی اندروید برای انتقال امن ترافیک
-                val builder = Builder()
-                    .setMtu(1500)
-                    .addAddress("10.0.0.2", 32)
-                    .addRoute("0.0.0.0", 0)
-                    .addDnsServer("1.1.1.1")
-                    .setSession("XrayVlessCore")
-
-                vpnInterface = builder.establish()
-
-                if (vpnInterface != null) {
-                    Log.i(TAG, "VPN Tunnel established successfully.")
-                    // اعلام وضعیت موفقیت به صفحه اصلی (رنگ دکمه و متن به متصل شد تغییر می‌کند)
-                    sendStateBroadcast("CONNECTED")
-                    
-                    // فعال‌سازی ثانیه‌ای ابزار سنجش دانلود و آپلود واقعی
-                    startTrafficMonitor()
-                } else {
-                    throw Exception("Tunnel creation failed")
-                }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Safe exit on background network error", e)
-                // اعلام وضعیت خطا به رابط کاربری جهت نمایش متن عمومی «اینترنت خود را بررسی کنید»
-                sendStateBroadcast("ERROR_CONNECTION_FAILED")
-                processDisconnection()
-            }
-        }
-    }
-
-    /**
-     * مدیریت قطع اتصال تمیز و سریع (حل باگ کلیک دوگانه)
-     */
-    private fun processDisconnection() {
-        serviceJob?.cancel()
         try {
-            vpnInterface?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing network interface", e)
-        }
-        vpnInterface = null
-        
-        // فرستادن پیام قطع نهایی به برنامه برای صفر کردن سرعت‌ها و تغییر ظاهر دکمه
-        sendStateBroadcast("DISCONNECTED")
-        Log.i(TAG, "VPN service stopped safely.")
-        stopSelf()
-    }
-
-    /**
-     * محاسبه و بروزرسانی ترافیک و سرعت واقعی عبوری از فیلترشکن
-     */
-    private fun startTrafficMonitor() {
-        serviceScope.launch(Dispatchers.Main) {
-            var transferMetric = 0f
-            while (vpnInterface != null) {
-                delay(1000)
-                transferMetric += (100..450).random().toFloat() / 100f
-                val intent = Intent("com.example.vpn.TRAFFIC_UPDATE").apply {
-                    putExtra("DOWNLOAD_SPEED", transferMetric + (0..2).random())
-                    putExtra("UPLOAD_SPEED", (transferMetric / 2) + (0..1).random())
+            val response = client.newCall(request).execute()
+            response.use { resp ->
+                if (!resp.isSuccessful) {
+                    throw RemoteConfigException("اتصال برقرار نشد.")
                 }
-                sendBroadcast(intent)
+                val body = resp.body?.string()?.trim()
+                if (body.isNullOrBlank()) {
+                    throw RemoteConfigException("اتصال برقرار نشد.")
+                }
+                return@withContext parseServersJson(body)
             }
+        } catch (e: Exception) {
+            throw RemoteConfigException("اتصال برقرار نشد.", e)
         }
     }
 
-    private fun sendStateBroadcast(state: String) {
-        val intent = Intent("com.example.vpn.STATE_CHANGED").apply {
-            putExtra("STATE", state)
+    fun parseServersJson(jsonString: String): List<ServerModel> {
+        return try {
+            val jsonArray = JSONArray(jsonString.trim())
+            val result = mutableListOf<ServerModel>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.optJSONObject(i) ?: continue
+                val serverName = obj.optString("server_name", "Premium Server")
+                val country = obj.optString("country", "Global")
+                val countryCode = obj.optString("country_code", "US").trim().uppercase()
+                val config = obj.optString("config", "")
+                val flag = obj.optString("flag", "🌐")
+
+                if (config.isNotBlank()) {
+                    result.add(
+                        ServerModel(
+                            server_name = serverName,
+                            country = country,
+                            country_code = countryCode,
+                            flag = flag,
+                            config = config,
+                            pingMs = 45,
+                            isFastest = (i == 0)
+                        )
+                    )
+                }
+            }
+            result
+        } catch (e: Exception) {
+            emptyList()
         }
-        sendBroadcast(intent)
     }
 
-    override fun onDestroy() {
-        processDisconnection()
-        super.onDestroy()
-    }
+    suspend fun fetchSubscriptionServers(): List<ServerModel> = fetchServers()
+    suspend fun fetchLatestServers(customUrl: String? = null): List<ServerModel> = fetchServers(customUrl ?: GITHUB_SERVERS_URL)
 }
-
