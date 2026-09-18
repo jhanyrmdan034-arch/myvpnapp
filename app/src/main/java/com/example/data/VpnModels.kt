@@ -69,7 +69,7 @@ data class ServerModel(
             }
         }
 
-        fun extractPortFromVless(vlessUri: String): String {
+        fun extractPortFromVless(vlessUri: String): Int {
             return try {
                 if (vlessUri.startsWith("vless://")) {
                     val afterAt = vlessUri.substringAfter("@")
@@ -89,7 +89,7 @@ typealias VpnServer = ServerModel
 
 data class VpnStats(
     val durationSeconds: Long = 0L,
-    val remainingLimitSeconds: Long = 5400L, // 1 hour 30 mins session limit
+    val remainingLimitSeconds: Long = 5400L,
     val downloadSpeedMbps: Float = 0f,
     val uploadSpeedMbps: Float = 0f,
     val bytesReceivedMb: Float = 0f,
@@ -102,7 +102,7 @@ object DefaultData {
         Language("en", "English", "English (US)", "US", "🇺🇸"),
         Language("fa", "Persian", "فارسی (Iran)", "IR", "🇮🇷", isRtl = true),
         Language("es", "Spanish", "Español", "ES", "🇪🇸"),
-        Language("ar", "Arabic", "العربية", "SA", "SZ", isRtl = true),
+        Language("ar", "Arabic", "العربية", "SA", "🇸🇦", isRtl = true),
         Language("tr", "Turkish", "Türkçe", "TR", "🇹🇷"),
         Language("fr", "French", "Français", "FR", "🇫🇷"),
         Language("de", "German", "Deutsch", "DE", "🇩🇪"),
