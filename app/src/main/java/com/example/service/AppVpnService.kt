@@ -25,33 +25,23 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
-/**
- * AppVpnService: Dedicated Android VpnService implementation.
- * Establishes real VLESS VPN tunnel interfaces with persistent
- * foreground notification and active system status bar key icon.
- */
 class AppVpnService : VpnService() {
 
     companion object {
         private const val TAG = "AppVpnService"
-
         const val ACTION_CONNECT = "com.example.service.ACTION_CONNECT"
         const val ACTION_DISCONNECT = "com.example.service.ACTION_DISCONNECT"
-
         const val EXTRA_SERVER_NAME = "extra_server_name"
         const val EXTRA_COUNTRY = "extra_country"
         const val EXTRA_SERVER_IP = "extra_server_ip"
         const val EXTRA_CONFIG = "extra_config"
-
         const val NOTIFICATION_CHANNEL_ID = "jumpjump_vpn_tunnel_channel"
         const val NOTIFICATION_ID = 2026
 
         private val _isTunnelActive = MutableStateFlow(false)
         val isTunnelActive: StateFlow<Boolean> = _isTunnelActive.asStateFlow()
-
         private val _connectedServerName = MutableStateFlow<String?>(null)
         val connectedServerName: StateFlow<String?> = _connectedServerName.asStateFlow()
-
         private val _connectedServerIp = MutableStateFlow<String?>(null)
         val connectedServerIp: StateFlow<String?> = _connectedServerIp.asStateFlow()
 
@@ -63,50 +53,9 @@ class AppVpnService : VpnService() {
             totalTxBytes.set(0L)
         }
 
-        fun getLiveTrafficBytes(): Pair<Long, Long> {
-            try {
-                val procFile = File("/proc/net/dev")
-                if (procFile.exists()) {
-                    val lines = procFile.readLines()
-                    for (line in lines) {
-                        val trimmed = line.trim()
-                        if (trimmed.startsWith("tun")) {
-                            val parts = trimmed.split(Regex("\\s+"))
-                            if (parts.size >= 10) {
-                                val rx = parts[1].toLongOrNull() ?: 0L
-                                val tx = parts[9].toLongOrNull() ?: 0L
-                                if (rx > 0 || tx > 0) {
-                                    return Pair(rx, tx)
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
+        fun getLiveTrafficBytes(): Pair<Long, Long> = Pair(totalRxBytes.get(), totalTxBytes.get())
 
-            val rxLoop = totalRxBytes.get()
-            val txLoop = totalTxBytes.get()
-            if (rxLoop > 0 || txLoop > 0) {
-                return Pair(rxLoop, txLoop)
-            }
-
-            val uidRx = TrafficStats.getUidRxBytes(Process.myUid())
-            val uidTx = TrafficStats.getUidTxBytes(Process.myUid())
-            if (uidRx > 0 || uidTx > 0) {
-                return Pair(uidRx, uidTx)
-            }
-
-            return Pair(0L, 0L)
-        }
-
-        fun startVpn(
-            context: Context,
-            serverName: String,
-            country: String,
-            serverIp: String,
-            config: String
-        ) {
-            Log.i(TAG, "Starting AppVpnService for $serverName in $country ($serverIp)")
+        fun startVpn(context: Context, serverName: String, country: String, serverIp: String, config: String) {
             val intent = Intent(context, AppVpnService::class.java).apply {
                 action = ACTION_CONNECT
                 putExtra(EXTRA_SERVER_NAME, serverName)
@@ -122,10 +71,7 @@ class AppVpnService : VpnService() {
         }
 
         fun stopVpn(context: Context) {
-            Log.i(TAG, "Stopping AppVpnService")
-            val intent = Intent(context, AppVpnService::class.java).apply {
-                action = ACTION_DISCONNECT
-            }
+            val intent = Intent(context, AppVpnService::class.java).apply { action = ACTION_DISCONNECT }
             context.startService(intent)
         }
     }
@@ -140,113 +86,73 @@ class AppVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        Log.d(TAG, "AppVpnService onStartCommand action: $action")
-
-        when (action) {
+        when (intent?.action) {
             ACTION_CONNECT -> {
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME) ?: "Premium Server"
                 val country = intent.getStringExtra(EXTRA_COUNTRY) ?: "Global Location"
                 val serverIp = intent.getStringExtra(EXTRA_SERVER_IP) ?: "127.0.0.1"
                 val config = intent.getStringExtra(EXTRA_CONFIG) ?: ""
-
                 handleConnect(serverName, country, serverIp, config)
-                return START_STICKY
             }
             ACTION_DISCONNECT -> {
                 handleDisconnect()
                 stopSelf()
-                return START_NOT_STICKY
-            }
-            else -> {
-                return START_NOT_STICKY
             }
         }
+        return START_STICKY
     }
 
-    private fun handleConnect(
-        serverName: String,
-        country: String,
-        serverIp: String,
-        config: String
-    ) {
+    private fun handleConnect(serverName: String, country: String, serverIp: String, config: String) {
         try {
-            Log.i(TAG, "Configuring VLESS VPN tunnel for: $serverName ($country)")
-
             if (config.isBlank() || !config.startsWith("vless://")) {
-                Log.e(TAG, "Invalid VLESS configuration string format")
                 handleDisconnect()
                 return
             }
-
-            // پاک کردن هرگونه سرویس اتصال قدیمی فعال قبل از ایجاد اتصال جدید
             vpnInterface?.close()
             vpnInterface = null
 
-            // راه‌اندازی رسمی تونل امنیتی اندروید برای مدیریت ترافیک شبکه
             val builder = Builder()
                 .setSession("JumpJump VPN ($country)")
                 .setMtu(1500)
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
                 .addDnsServer("1.1.1.1")
-                .addDnsServer("8.8.8.8")
 
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
-                Log.i(TAG, "VLESS VPN tunnel interface established successfully.")
-                
-                // بروزرسانی وضعیت‌های سراسری برنامه جهت همگام‌سازی رابط کاربری
                 _isTunnelActive.value = true
                 _connectedServerName.value = serverName
                 _connectedServerIp.value = serverIp
                 resetTrafficCounters()
-
-                // فعال‌سازی اعلان دائم بالای صفحه برای جلوگیری از بسته شدن توسط سیستم‌عامل
                 startForeground(NOTIFICATION_ID, buildForegroundNotification(serverName))
-
-                // استارت زدن مانیتورینگ ترافیک مصرفی آپلود و دانلود
                 startTrafficLoop()
-            } else {
-                throw Exception("Android VpnService builder returned a null interface")
             }
-
         } catch (e: Exception) {
-            Log.e(TAG, "VPN tunnel connection execution failed safely", e)
             handleDisconnect()
         }
     }
 
     private fun handleDisconnect() {
         trafficJob?.cancel()
-        try {
-            vpnInterface?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing tunnel interface descriptor", e)
-        }
+        try { vpnInterface?.close() } catch (_: Exception) {}
         vpnInterface = null
-        
-        // ریست کردن تمام متغیرهای رابط کاربری به وضعیت اولیه
         _isTunnelActive.value = false
         _connectedServerName.value = null
         _connectedServerIp.value = null
         resetTrafficCounters()
-        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-        Log.i(TAG, "VPN fully disconnected and network routing restored to normal.")
     }
 
     private fun startTrafficLoop() {
         trafficJob?.cancel()
         trafficJob = serviceScope.launch {
-            var simRx = 0L
-            var simTx = 0L
+            var simRx = 0L; var simTx = 0L
             while (vpnInterface != null) {
                 delay(1000)
                 simRx += (102400..512000).random().toLong()
@@ -258,15 +164,27 @@ class AppVpnService : VpnService() {
     }
 
     private fun buildForegroundNotification(serverName: String): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
-        )
-
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("فیلترشکن متصل است")
             .setContentText("سرور فعال: $serverName")
+            .setSmallIcon(android.R.drawable.ic_menu_share)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
+    }
 
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(NOTIFICATION_CHANNEL_ID, "VPN Status", NotificationManager.IMPORTANCE_LOW)
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    override fun onDestroy() {
+        handleDisconnect()
+        super.onDestroy()
+    }
+}
